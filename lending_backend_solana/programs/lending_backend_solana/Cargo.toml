@@ -1,0 +1,26 @@
+[package]
+name = "lending_backend_solana"
+version = "0.1.0"
+description = "Created with Anchor"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "lending_backend_solana"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
+
+[dependencies]
+anchor-lang = { version = "0.31.0", features = ["init-if-needed"] }
+anchor-spl = "0.31.0"
+solana-program = "2.2.1"
+# anchor-spl = { version = "0.31.0", features = ["no-entrypoint"] }
+pyth-sdk-solana = "0.10.1"
+pyth-solana-receiver-sdk = "0.3.1"
+

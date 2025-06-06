@@ -1,0 +1,10 @@
+version: "3.8"
+
+services:
+  anchor:
+    build: .
+    container_name: anchor-dev-2025may30
+    volumes:
+      - .:/home/devuser/project
+    working_dir: /home/devuser/project
+    tty: true
