@@ -21,3 +21,8 @@ $solana-test-validator
 $solana config get
 
 solana-keygen pubkey account3.json
+
+solana-test-validator --version
+
+solana --install
+

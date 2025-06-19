@@ -142,11 +142,59 @@ describe("Lending Smart Contract Tests", async () => {
     console.log("Create User Account", initUserTx);
   });
 
- 
+  it("Test Init and Fund USDC Bank", async () => {
+    const initUSDCBankTx = await program.methods
+      .initBank(new BN(1), new BN(1))
+      .accounts({
+        signer: signer.publicKey,
+        mint: mintUSDC,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .rpc({ commitment: "confirmed" });
 
+    console.log("Create USDC Bank Account", initUSDCBankTx);
+
+    const amount = 10_000 * 10 ** 9;
+    const mintTx = await mintTo(
+      // @ts-ignores
+      banksClient,
+      signer,
+      mintUSDC,
+      usdcBankAccount,
+      signer,
+      amount
+    );
+
+    console.log("Mint to USDC Bank Signature:", mintTx);
+  });
+
+  it("Test Init amd Fund SOL Bank", async () => {
+    const initSOLBankTx = await program.methods
+      .initBank(new BN(1), new BN(1))
+      .accounts({
+        signer: signer.publicKey,
+        mint: mintSOL,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .rpc({ commitment: "confirmed" });
+
+    console.log("Create SOL Bank Account", initSOLBankTx);
+
+    const amount = 10_000 * 10 ** 9;
+    const mintSOLTx = await mintTo(
+      // @ts-ignores
+      banksClient,
+      signer,
+      mintSOL,
+      solBankAccount,
+      signer,
+      amount
+    );
+
+    console.log("Mint to SOL Bank Signature:", mintSOLTx);
+  });
 
   it("Create and Fund Token Account", async () => {
-    console.log("starting----USDC Token Account Created:");
     const USDCTokenAccount = await createAccount(
       // @ts-ignores
       banksClient,
@@ -171,5 +219,56 @@ describe("Lending Smart Contract Tests", async () => {
     console.log("Mint to USDC Bank Signature:", mintUSDCTx);
   });
 
+  it("Test Deposit", async () => {
+    const depositUSDC = await program.methods
+      .deposit(new BN(100000000000))
+      .accounts({
+        signer: signer.publicKey,
+        mint: mintUSDC,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .rpc({ commitment: "confirmed" });
 
+    console.log("Deposit USDC", depositUSDC);
+  });
+
+  it("Test Borrow", async () => {
+    const borrowSOL = await program.methods
+      .borrow(new BN(1))
+      .accounts({
+        signer: signer.publicKey,
+        mint: mintSOL,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        priceUpdate: solUsdPriceFeedAccount,
+      })
+      .rpc({ commitment: "confirmed" });
+
+    console.log("Borrow SOL", borrowSOL);
+  });
+
+  it("Test Repay", async () => {
+    const repaySOL = await program.methods
+      .repay(new BN(1))
+      .accounts({
+        signer: signer.publicKey,
+        mint: mintSOL,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .rpc({ commitment: "confirmed" });
+
+    console.log("Repay SOL", repaySOL);
+  });
+
+  it("Test Withdraw", async () => {
+    const withdrawUSDC = await program.methods
+      .withdraw(new BN(100))
+      .accounts({
+        signer: signer.publicKey,
+        mint: mintUSDC,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .rpc({ commitment: "confirmed" });
+
+    console.log("Withdraw USDC", withdrawUSDC);
+  });
 });
