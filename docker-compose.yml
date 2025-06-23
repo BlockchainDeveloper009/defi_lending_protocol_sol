@@ -1,0 +1,28 @@
+version: '3'
+
+services:
+  app:
+    build:
+      context: ./defi_lending_protocol_app
+    volumes:
+      - ./defi_lending_protocol_app:/defi_lending_protocol_app
+      - node_modules:/defi_lending_protocol_app/node_modules
+    ports:
+      - 80:80
+    environment:
+      - PORT=80
+  solana:    
+    build:
+      context: ./lending_backend_solana
+    image: slending_backend_solana-setup
+    ports:
+      - "8899:8899"
+      - "8900:8900"
+    volumes:
+      - ./lending_backend_solana:/lending_backend_solana
+      - test-ledger:/lending_backend_solana/test-ledger
+#      - ./solana/id.json:/root/.config/solana/id.json
+
+volumes:
+  node_modules:
+  test-ledger:

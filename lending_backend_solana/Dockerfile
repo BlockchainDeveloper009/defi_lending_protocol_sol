@@ -1,50 +1,21 @@
-FROM rust:1.82
+FROM node:16
+#Below to make source work
+RUN rm /bin/sh && ln -s /bin/bash /bin/sh
 
-ENV DEBIAN_FRONTEND=noninteractive
+RUN apt update
 
-# Install required packages as root
-RUN apt-get update && apt-get install -y \
-    pkg-config \
-    libssl-dev \
-    build-essential \
-    libudev-dev \
-    curl \
-    git \
-    clang \
-    llvm \
-    libclang-dev \
-    protobuf-compiler \
-    nodejs \
-    npm \
-    python3 \
-    python3-pip \
-    sudo
+RUN apt update && apt install -y ca-certificates
+RUN apt install libssl-dev libudev-dev pkg-config zlib1g-dev llvm clang make curl nano git -y
+RUN curl --proto '=https' --tlsv1.2 https://sh.rustup.rs -sSf | bash -s -- -y
+RUN sh -c "$(curl -sSfL https://release.solana.com/v1.10.38/install)"
+RUN npm install -g mocha && npm install -g ts-node
+RUN /root/.cargo/bin/cargo install --git https://github.com/project-serum/anchor anchor-cli --locked
 
-# Create user and allow passwordless sudo
-RUN useradd -ms /bin/bash devuser && \
-    echo 'devuser ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
+ENV PATH="/root/.local/share/solana/install/active_release/bin:/root/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ENV HOME="/root/"
 
-# Switch to devuser
-USER devuser
-WORKDIR /home/devuser
+WORKDIR /solana/
+COPY ./ ./
 
-# Install Solana CLI v1.18.11 as devuser
-ENV SOLANA_VERSION=v1.18.11
-RUN curl -sSfL https://release.solana.com/$SOLANA_VERSION/install | bash -s - -b /home/devuser/.local/bin && \
-    echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
-
-ENV PATH="/home/devuser/.local/bin:$PATH"
-
-# # Install Solana CLI v1.18.11 as devuser
-# RUN curl -sSfL https://release.solana.com/v1.18.11/install | bash && \
-#     echo 'export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"' >> ~/.bashrc
-
-# # Update PATH for this layer
-# ENV PATH="/home/devuser/.local/share/solana/install/active_release/bin:$PATH"
-
-# Install Anchor CLI v0.29.0
-RUN cargo install --git https://github.com/coral-xyz/anchor anchor-cli --tag v0.29.0
-
-WORKDIR /home/devuser/project
-
-CMD ["bash"]
+RUN cargo build-bpf --manifest-path=/solana/Cargo.toml
+CMD ["./docker-entrypoint.sh"]

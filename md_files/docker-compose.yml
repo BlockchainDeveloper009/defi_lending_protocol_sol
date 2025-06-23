@@ -1,0 +1,26 @@
+version: '3'
+services:
+  bootstrap:
+    image: solanalabs/solana
+    command: solana-test-validator
+    ports:
+      - "8899:8899"
+      - "8900:8900"
+    volumes:
+      - ./bootstrap:/root/.config/solana
+
+  validator1:
+    image: solanalabs/solana
+    depends_on:
+      - bootstrap
+    command: solana-validator --entrypoint bootstrap:8001
+    volumes:
+      - ./validator1:/root/.config/solana
+
+  validator2:
+    image: solanalabs/solana
+    depends_on:
+      - bootstrap
+    command: solana-validator --entrypoint bootstrap:8001
+    volumes:
+      - ./validator2:/root/.config/solana

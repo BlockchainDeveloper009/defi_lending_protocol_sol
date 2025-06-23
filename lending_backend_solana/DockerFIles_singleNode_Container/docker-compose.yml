@@ -3,7 +3,7 @@ version: "3.8"
 services:
   anchor:
     build: .
-    container_name: anchor-dev-2025may30
+    container_name: anchor-dev-2025mjun19_309pm
     volumes:
       - .:/home/devuser/project
     working_dir: /home/devuser/project

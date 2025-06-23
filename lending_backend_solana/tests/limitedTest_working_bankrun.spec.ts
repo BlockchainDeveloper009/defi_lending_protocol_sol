@@ -10,8 +10,8 @@ import { startAnchor, BanksClient, ProgramTestContext } from "solana-bankrun";
 import { PublicKey, Keypair, Connection } from "@solana/web3.js";
 
 // @ts-ignore
-import IDL from "../../../target/idl/btc_10_lending_protocol.json";
-import { LendingBackendSolana } from "../../../target/types/lending_backend_solana";
+import IDL from "../target/idl/lending_backend_solana.json";
+import { LendingBackendSolana } from "../target/types/lending_backend_solana";
 import { BankrunContextWrapper } from "../bankrun-utils/bankrunConnection";
 
 describe("Lending Smart Contract Tests", async () => {
@@ -34,7 +34,7 @@ describe("Lending Smart Contract Tests", async () => {
 
   context = await startAnchor(
     "",
-    [{ name: "lending", programId: new PublicKey(IDL.address) }],
+    [{ name: "lending_backend_solana", programId: new PublicKey(IDL.address) }],
     accountInfo
       ? [
           {
