@@ -1,15 +1,15 @@
-# Use Node.js 24.2.0 as the base image
+# Use official Node.js 24.2.0 image as base (includes Node and npm)
 FROM node:24.2.0
 
-# Use bash shell for consistency
+# Replace default /bin/sh with bash for better scripting compatibility
 RUN rm /bin/sh && ln -s /bin/bash /bin/sh
 
-# Set environment variables for Rust and Cargo
+# Set environment variables for Rust and Cargo to function properly
 ENV CARGO_HOME="/root/.cargo"
 ENV RUSTUP_HOME="/root/.rustup"
 ENV PATH="${CARGO_HOME}/bin:${PATH}"
 
-# Install system dependencies
+# Install system dependencies needed for Rust, Solana, and Anchor builds
 RUN apt update && apt install -y --no-install-recommends \
     ca-certificates \
     libssl-dev \
@@ -25,35 +25,38 @@ RUN apt update && apt install -y --no-install-recommends \
     procps \
     && apt clean && rm -rf /var/lib/apt/lists/*
 
-# Install Rust (stable, will default to latest stable version)
+# Copy the Rust toolchain file to pin Rust version and targets
+COPY .rust-toolchain.toml ./
+
+# Install Rust via rustup using the version pinned in .rust-toolchain.toml
 RUN curl https://sh.rustup.rs -sSf | bash -s -- -y
 
-# Install Solana CLI v2.2.17 (required for Anchor 0.31+)
+# Debug: Show installed Rust version and toolchain info
+RUN rustup show
+
+# Install Solana CLI version 2.2.17 (compatible with Anchor 0.31.x)
 RUN curl -sSfL https://release.solana.com/v2.2.17/install | bash
 
-# Add Solana CLI to PATH
+# Add Solana CLI to PATH environment variable
 ENV PATH="/root/.local/share/solana/install/active_release/bin:${PATH}"
 
-# Install Node.js test tools
+# Install global Node.js tools for testing (mocha and ts-node)
 RUN npm install -g mocha ts-node
 
-# Install latest Anchor CLI (0.31.1 is on main branch)
+# Install Anchor CLI at version 0.31.1 (locked to this git tag)
 RUN cargo install --git https://github.com/coral-xyz/anchor anchor-cli --tag v0.31.1 --locked
 
-# Add Solana BPF target (required for program builds)
-RUN rustup target add bpfel-unknown-unknown
+# Set working directory inside the container where the project files will live
+WORKDIR /solana
 
-# Set working directory
-WORKDIR /solana/
+# Copy entire project contents into the container's working directory
+COPY . .
 
-# Copy project files into container
-COPY ./ ./
+# Make the Docker entrypoint script executable (if it exists)
+RUN chmod +x ./docker-entrypoint.sh || true
 
-# Make the entrypoint executable
-RUN chmod +x ./docker-entrypoint.sh
-
-# Build Solana program using Anchor
+# Build the Solana Anchor program inside the container
 RUN anchor build
 
-# Default command when container starts
+# Default command to run when container starts (runs entrypoint script)
 CMD ["./docker-entrypoint.sh"]
