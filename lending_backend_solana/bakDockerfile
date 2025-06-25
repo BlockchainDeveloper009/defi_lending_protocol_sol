@@ -1,0 +1,39 @@
+# Use Node.js v24.2.0 as the base image
+FROM node:24.2.0
+
+# Use bash as default shell for compatibility
+RUN rm /bin/sh && ln -s /bin/bash /bin/sh
+
+# Update package lists and install CA certificates
+RUN apt update && apt install -y ca-certificates
+
+# Install build dependencies for Rust/Solana/Anchor
+RUN apt install -y libssl-dev libudev-dev pkg-config zlib1g-dev llvm clang make curl nano git procps
+
+# Install Rust toolchain
+RUN curl --proto '=https' --tlsv1.2 https://sh.rustup.rs -sSf | bash -s -- -y
+
+# Install Solana CLI and BPF tools (v2.2.17)
+RUN sh -c "$(curl -sSfL https://release.solana.com/v2.2.17/install)"
+
+# Install global Node.js tools for testing
+RUN npm install -g mocha ts-node
+
+# Install Anchor CLI
+RUN /root/.cargo/bin/cargo install --git https://github.com/project-serum/anchor anchor-cli --locked
+
+# Set PATH so Solana and Anchor are available in all shells
+ENV PATH="/root/.local/share/solana/install/active_release/bin:/root/.cargo/bin:${PATH}"
+ENV HOME="/root/"
+
+# Set working directory
+WORKDIR /solana/
+
+# Copy project files into the container
+COPY ./ ./
+
+# Build Solana program using the installed Solana toolchain
+RUN cargo build-sbf --manifest-path=/solana/Cargo.toml
+
+# Default command (ensure this script exists and is executable)
+CMD ["./docker-entrypoint.sh"]

@@ -1,0 +1,21 @@
+# Ignore node modules
+node_modules
+
+# Ignore Solana/Rust build output
+target
+
+# Ignore Git data
+.git
+.gitignore
+
+# Ignore editor/IDE settings
+.vscode
+*.swp
+
+# Ignore Docker config itself
+Dockerfile
+.dockerignore
+
+# Ignore logs and environment files
+*.log
+.env

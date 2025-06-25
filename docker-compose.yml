@@ -4,6 +4,8 @@ services:
   app:
     build:
       context: ./defi_lending_protocol_app
+    container_name: defi_lending_app         # Name for the app container
+    image: defi_lending_app-image            # Name for the app image
     volumes:
       - ./defi_lending_protocol_app:/defi_lending_protocol_app
       - node_modules:/defi_lending_protocol_app/node_modules
@@ -11,17 +13,19 @@ services:
       - 80:80
     environment:
       - PORT=80
+
   solana:    
     build:
       context: ./lending_backend_solana
-    image: slending_backend_solana-setup
+    container_name: lending_backend_solana   # Name for the solana container
+    image: lending_backend_solana-image      # Name for the solana image
     ports:
       - "8899:8899"
       - "8900:8900"
     volumes:
       - ./lending_backend_solana:/lending_backend_solana
       - test-ledger:/lending_backend_solana/test-ledger
-#      - ./solana/id.json:/root/.config/solana/id.json
+      # - ./solana/id.json:/root/.config/solana/id.json  # Uncomment to use a specific keypair
 
 volumes:
   node_modules:
