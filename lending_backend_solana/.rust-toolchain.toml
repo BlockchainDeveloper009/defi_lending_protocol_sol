@@ -1,4 +1,5 @@
 [toolchain]
-channel = "1.77.0"
-components = ["rust-src"]
+channel = "1.79.0"
+components = ["rust-src", "llvm-tools-preview"]
 targets = ["bpfel-unknown-unknown"]
+profile = "minimal"

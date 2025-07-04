@@ -3,6 +3,9 @@ use anchor_spl::associated_token::AssociatedToken;
 use anchor_spl::token_interface::{ self, Mint, TokenAccount, TokenInterface, TransferChecked };
 use crate::state::*;
 
+// use solana_program::log::sol_log_compute_units;
+// use solana_program::clock::Clock;
+
 #[derive(Accounts)]
 pub struct Deposit<'info> {
     #[account(mut)]
@@ -45,18 +48,26 @@ pub struct Deposit<'info> {
 // 5. Update users health factor ?? 
 
 pub fn process_deposit(ctx: Context<Deposit>, amount: u64) -> Result<()> {
+     //  sol_log_compute_units(); // Log at function entry
+
     let transfer_cpi_accounts = TransferChecked {
         from: ctx.accounts.user_token_account.to_account_info(),
         mint: ctx.accounts.mint.to_account_info(),
         to: ctx.accounts.bank_token_account.to_account_info(),
         authority: ctx.accounts.signer.to_account_info(),
     };
+    // sol_log_compute_units(); // After building CPI accounts
 
     let cpi_program = ctx.accounts.token_program.to_account_info();
     let cpi_ctx = CpiContext::new(cpi_program, transfer_cpi_accounts);
     let decimals = ctx.accounts.mint.decimals;
 
+    // sol_log_compute_units(); // Before CPI
+
     token_interface::transfer_checked(cpi_ctx, amount, decimals)?;
+
+    // sol_log_compute_units(); // After CPI
+
 
     // calculate new shares to be added to the bank
     let bank = &mut ctx.accounts.bank;
@@ -74,10 +85,14 @@ pub fn process_deposit(ctx: Context<Deposit>, amount: u64) -> Result<()> {
         bank.total_deposits = amount;
         bank.total_deposit_shares = amount;
     }
+   // sol_log_compute_units(); // After initial bank update
+
     //checked_divide/checked_multiple - to avoid underflow/overflow
     let deposit_ratio = amount.checked_div(bank.total_deposits).unwrap();
     let users_shares = bank.total_deposit_shares.checked_mul(deposit_ratio).unwrap();
     
+   // sol_log_compute_units(); // After share calculation
+
     let user = &mut ctx.accounts.user_account;
     
     match ctx.accounts.mint.to_account_info().key() {
@@ -90,6 +105,7 @@ pub fn process_deposit(ctx: Context<Deposit>, amount: u64) -> Result<()> {
             user.deposited_sol_shares += users_shares; 
         }
     }
+ // sol_log_compute_units(); // After user update
 
     // The above match statement can easily have new branches added when additional assets are added to the protocol
 // for the deposited money,  update bank money, bank shares.. 
@@ -100,6 +116,12 @@ pub fn process_deposit(ctx: Context<Deposit>, amount: u64) -> Result<()> {
     bank.total_deposit_shares += users_shares;
 
     user.last_updated = Clock::get()?.unix_timestamp;
+
+    // sol_log_compute_units(); // Before exit
+
+    msg!("User {} deposited {} tokens. Shares: {}", ctx.accounts.signer.key(), amount, users_shares);
+    msg!("Bank total deposits: {}", bank.total_deposits);
+    msg!("User last updated: {}", user.last_updated);
 
     Ok(())
 }

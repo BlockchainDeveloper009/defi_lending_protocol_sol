@@ -34,7 +34,7 @@ RUN curl https://sh.rustup.rs -sSf | bash -s -- -y
 RUN /bin/bash -c "source $HOME/.cargo/env && rustup show"
 
 # 7. Pin compatible Solana CLI version for Anchor
-ENV SOLANA_VERSION=v2.1.1
+ENV SOLANA_VERSION=v1.18.14
 # Define the base directory for Solana installation for clear reference.
 ENV SOLANA_INSTALL_DIR="/root/.local/share/solana/install/active_release"
 
@@ -115,4 +115,4 @@ RUN /bin/bash -c "source $HOME/.cargo/env && \
 
 # 18. Default entrypoint
 # The command that will be executed when the container starts.
-CMD ["/bin/bash", "./docker-entrypoint.sh"]
+CMD ["./docker-entrypoint.sh"]

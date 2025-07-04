@@ -1,0 +1,82 @@
+# 1. Base image
+FROM node:24.2.0
+
+# 2. Switch to bash
+RUN rm /bin/sh && ln -s /bin/bash /bin/sh
+
+# 3. Set up Rust environment
+ENV CARGO_HOME="/root/.cargo"
+ENV RUSTUP_HOME="/root/.rustup" 
+ENV PATH="${CARGO_HOME}/bin:${PATH}"
+
+# 4. Install system dependencies
+RUN apt update && apt install -y --no-install-recommends \
+    ca-certificates libssl-dev libudev-dev pkg-config \
+    zlib1g-dev llvm clang make curl nano git procps \
+    && apt clean && rm -rf /var/lib/apt/lists/*
+
+# 5. Pin Rust toolchain
+COPY ./lending_backend_solana/.rust-toolchain.toml ./
+RUN curl https://sh.rustup.rs -sSf | bash -s -- -y
+
+# 6. Verify Rust toolchain
+RUN /bin/bash -c "source $HOME/.cargo/env && rustup show"
+
+# 7. Pin compatible Solana CLI version for Anchor
+ENV SOLANA_VERSION=v1.18.14
+# Using Anza's installer due to potential SSL_ERROR_SYSCALL with release.solana.com
+RUN sh -c "$(curl -sSfL https://release.anza.xyz/${SOLANA_VERSION}/install)"
+
+# 8. Confirm Solana CLI install
+RUN /root/.local/share/solana/install/active_release/bin/solana --version
+
+# 9. Copy SBF SDK if available
+# RUN if [ -d "/root/.local/share/solana/install/active_release/sbf" ]; then \
+#         mkdir -p /usr/local/bin/platform-tools-sdk && \
+#         cp -r /root/.local/share/solana/install/active_release/sbf /usr/local/bin/platform-tools-sdk/sbf; \
+#     else \
+#         echo "⚠️ No SBF SDK found — check if Solana CLI version changed."; \
+#     fi
+
+# 10. Global Node tools
+RUN npm install -g mocha ts-node
+
+# 11. Git fetch via CLI
+ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
+
+# 12. Install Anchor CLI matching your toolchain
+RUN /bin/bash -c "source $HOME/.cargo/env && \
+    cargo install --git https://github.com/coral-xyz/anchor \
+      anchor-cli --tag v0.31.1 --locked"
+
+# 13. Include your prebuilt binaries
+COPY binaries/anchor /usr/local/bin/anchor
+COPY binaries/cargo-build-sbf /usr/local/bin/cargo-build-sbf
+RUN chmod +x /usr/local/bin/anchor /usr/local/bin/cargo-build-sbf
+
+# 14. Set workdir & copy code
+WORKDIR /solana
+COPY . .
+
+RUN chmod +x ./docker-entrypoint.sh || true
+WORKDIR /solana/lending_backend_solana
+
+# 15. Build your Anchor project
+# RUN /bin/bash -c "source $HOME/.cargo/env && \
+#     /root/.local/share/solana/install/active_release/bin/solana --version && \
+#     anchor build"
+
+# 15. Build your Anchor project - Step 1: Source Cargo environment
+# This sets up PATH for Rust/Cargo tools.
+RUN /bin/bash -c "source $HOME/.cargo/env"
+
+# 16. Build your Anchor project - Step 2: Verify Solana CLI version
+# This confirms Solana CLI is accessible and prints its version.
+RUN /bin/bash -c "source $HOME/.cargo/env && /root/.local/share/solana/install/active_release/bin/solana --version"
+
+# 17. Build your Anchor project - Step 3: Build Anchor project
+# This compiles your smart contracts.
+RUN /bin/bash -c "source $HOME/.cargo/env && anchor build"
+
+# 18. Default entrypoint
+CMD ["./docker-entrypoint.sh"]
