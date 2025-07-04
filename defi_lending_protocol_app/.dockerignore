@@ -1,0 +1,33 @@
+# Ignore dependencies - they'll be installed in the container
+node_modules
+npm-debug.log
+yarn-error.log
+.pnpm-debug.log
+
+# Ignore build output
+.next
+out
+dist
+coverage
+
+# Ignore local environment files
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# Ignore Docker-related output
+Dockerfile
+docker-compose.yml
+docker-compose.override.yml
+
+# Ignore OS-specific/system files
+.DS_Store
+Thumbs.db
+
+# Ignore editor configs
+.vscode
+.idea
+*.swp
+*.swo

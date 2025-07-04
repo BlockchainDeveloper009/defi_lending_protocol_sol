@@ -1,0 +1,123 @@
+Here’s a **ready-to-run profiling setup** to help you audit performance and cut compute costs in your Solana on-chain code:
+
+---
+
+## 🧰 1. `compute_fn!` Macro Example
+
+Use this macro to log compute unit usage before and after critical code blocks:
+
+```rust
+use solana_program::{msg, log::sol_log_compute_units};
+
+#[macro_export]
+macro_rules! compute_fn {
+    ($label:expr => $block:block) => {{
+        msg!(concat!($label, " {"));
+        sol_log_compute_units();
+        let result = $block;
+        sol_log_compute_units();
+        msg!(concat!("} // ", $label));
+        result
+    }};
+}
+```
+
+**Usage in your program:**
+
+```rust
+pub fn expensive_operation(ctx: Context<MyContext>) -> ProgramResult {
+    compute_fn!("expensive_operation" => {
+        // Your costly logic here
+        for _ in 0..100 {
+            msg!("doing work...");
+        }
+    });
+    Ok(())
+}
+```
+
+When run (on either `localnet` or `devnet`), the Solana test-validator logs will include dispatches of compute unit usage before and after the block—making bottlenecks crystal clear. ([medium.com][1], [dev.to][2])
+
+---
+
+## 🛠️ 2. Full Setup Example (Anchor)
+
+1. **Add Macro**: Place `compute_fn!` in a helper Rust file.
+2. **Instrument Code**: Wrap key operations in macros.
+3. **Run Tests & Capture Logs**:
+
+   ```bash
+   solana-test-validator --reset
+   anchor test
+   ```
+4. **View Logs**:
+
+   ```bash
+   solana logs --url localhost
+   ```
+
+You'll see output like:
+
+```
+expensive_operation {
+  compute units: before 50000, after 75000
+} // expensive_operation
+```
+
+This reveals exactly how many CUs the block consumed.
+
+---
+
+## 🧭 3. Deep-Dive Debugging with Gimlet
+
+For instruction-level tracing and breakpoints, use **Gimlet**, a VS Code extension that wraps Solana LLDB debugging.
+
+* **Installation & Setup**:
+
+  * Install VS Code + Rust Analyzer
+  * Install `agave-ledger-tool`: `cargo install agave-ledger-tool`
+  * Install `solana-lldb` with SBF tools: `cargo-build-sbf --force-tools-install`
+  * In `~/.bashrc` or `.zshrc`, add:
+
+    ```
+    export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+    export LLDB_DEBUGSERVER_PATH="/usr/bin/lldb-server"
+    ```
+
+  ([solana.com][3], [github.com][4])
+
+* **Usage**:
+
+  1. Start local validator with ledger:
+
+     ```bash
+     solana-test-validator --ledger ./ledger
+     ```
+  2. Open the command palette and run **Run Solana LLDB** or **Run Agave Ledger Tool**.
+  3. Set breakpoints in your Rust code, run the instruction via the UI, and step through BPF execution.
+
+This lets you inspect account memory, registers, and instruction flow at each execution step. ([github.com][4])
+
+---
+
+[How to Install and Start Using Gimlet - a Solana Step Debugger](https://www.youtube.com/watch?v=6YIvpYoplMc&utm_source=chatgpt.com)
+
+---
+
+## ✅ How to Use This Setup
+
+1. **Add macro & wrap hot paths**.
+2. **Run Anchor + test-validator** and collect logs.
+3. **Identify** functions with high CU consumption.
+4. **Refactor** (e.g., switch to zero-copy, reduce logging, cache PDAs).
+5. **Re-test** to measure improvements.
+6. **Use Gimlet** for low-level debugging of persistent performance issues.
+
+---
+
+This setup gives you both **quantitative CU metrics** (via `compute_fn!`) and **fine-grained step debugging** (via Gimlet). Let me know if you'd like a GitHub repo template or VS Code workspace config!
+
+[1]: https://medium.com/%40het2341999/optimizing-solana-programs-26c7ddd0299c?utm_source=chatgpt.com "Optimizing Solana Programs. Actionable insights | by Het Dagli"
+[2]: https://dev.to/shivamsspirit/introducing-gill-the-modern-solana-javascript-client-library-325l?utm_source=chatgpt.com "Introducing Gill: The Modern Solana JavaScript client library"
+[3]: https://solana.com/developers/guides/advanced/how-to-optimize-compute?utm_source=chatgpt.com "How to Optimize Compute Usage on Solana"
+[4]: https://github.com/LimeChain/solana-step-debugger?utm_source=chatgpt.com "LimeChain/gimlet: VSCode Extension for debugging Solana Programs"

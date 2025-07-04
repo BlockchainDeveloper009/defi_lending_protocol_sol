@@ -50,3 +50,37 @@ harishgk@harishgk-HP-EliteBook-Folio-9480m:~/source/repos/defi_lending_protocol_
 harishgk@harishgk-HP-EliteBook-Folio-9480m:~/source/repos/defi_lending_protocol
 
 docker run -d -p 3000:3000 -p 8899:8899 --name solana-lending-app sha256:abcc631ca46c140717ec3f9938fcbb6dea1694318f19b24f794ddbcb675522db
+
+
+with cache:
+**********
+docker build -t lending-backend-solana -f lending_backend_solana/Dockerfile .
+
+without cache:
+
+docker build --no-cache -t lending-backend-solana -f lending_backend_solana/Dockerfile .
+
+
+
+agave-install init v2.1.7
+
+docker image: successful - july1_2025
+
+ => => exporting layers                                                   73.6s
+ => => writing image sha256:895cf5f57beb807932b4fc06a99fc7ec5c8d1fd2316c7  0.0s
+ => => naming to docker.io/library/lending-backend-solana                  0.0s
+harishgk@harishgk-HP-EliteBook-Folio-9480m:~/source/repos/defi_lending_protocol_sol$ 
+
+july2_2025:
+
+ => exporting to image                                                    70.1s
+ => => exporting layers                                                   70.0s
+ => => writing image sha256:d0fc8fff22adc2a21da93d13c276f6f0462e7b55ed01e  0.0s
+ => => naming to docker.io/library/lending-backend-solana                  0.0s
+harishgk@harishgk-HP-EliteBook-Folio-9480m:~/source/repos/defi_lending_protocol_sol$ e
+
+
+
+$ docker run -it --rm -p 8899:8899 -p 3000:3000 --name lending-backend-solana lending-backend-solana
+
+$docker exec -it lending-backend-solana /bin/bash
