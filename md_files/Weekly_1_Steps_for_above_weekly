@@ -1,0 +1,130 @@
+i already have setup lending protocol project at https://github.com/BlockchainDeveloper009/defi_lending_protocol_sol/tree/docker_nextjs_solana_connection/lending_backend_solana, please analyze this and lets keep this as example project and build the curriculum around it.
+
+
+
+Got it! Since you already have a **lending protocol project** set up at that GitHub repo, we'll build the curriculum around it to make your portfolio interview-ready. Let’s proceed like this:
+
+---
+
+## 🧭 Step 1: Code Review & Roadmap
+
+1. **Quick Overview**
+
+   * Walk me through the repo:"
+
+     * What Smart Contracts (Rust/Anchor) does it include? (e.g., loan creation, repayment)
+     * Is there a front-end (Next.js) connected to it?
+     * How are tests structured (unit/integration)?
+
+2. **Clarify Stack & Architecture**
+
+   * On-chain state model (accounts, PDAs)?
+   * Off-chain components (indexing, APIs)?
+   * Deployment environment (devnet, dockerized, mainnet)?
+
+---
+
+## 📘 Step 2: Performance & Cost Analysis
+
+Once I understand:
+
+* We’ll **benchmark** your core flows (e.g., borrow, repay).
+* Log compute units, execution time, storage size for:
+
+  * Loan creation
+  * Repayment
+  * Liquidation
+
+Then identify optimization targets.
+
+---
+
+## 🧪 Step 3: Optimization Planning
+
+We’ll focus on real improvements:
+
+* **On-chain CPU & compute-unit use**
+
+  * Zero-copy deserialization
+  * Reducing repeated memory allocations
+  * Lowering PDA lookups
+
+* **Rent & storage**
+
+  * Struct packing
+  * Shared accounts
+  * Account resizing
+
+* **Compute budget tuning**
+
+  * Custom compute limits
+  * Batching loan logic
+
+We'll estimate dollar savings; e.g. “Loan write was 180K CU → optimized to 90K CU → \~50% savings. At 1,000 tx/day this saves \~45M CU/month (\~0.45 SOL/month)”.
+
+---
+
+## 🚀 Step 4: New Features for Real-world Complexity
+
+Add production-ready features:
+
+* **Collateral liquidation engine** (auto-liquidation path)
+* **Interest accrual scheduler** (cron-like via transactions)
+* **Off-chain indexing** + **dashboard** with metrics:
+
+  * Total value locked (TVL)
+  * Loans in danger
+  * Compute usage over time
+
+---
+
+## 🧩 Step 5: Integration & End-to-End Testing
+
+* Build a **Next.js front-end** for borrowing/lending flows
+* Add **e2e tests** across on‑chain and UI flows using Playwright or Cypress
+* Profile and measure full-stack latency and resource usage
+
+---
+
+## 🎤 Step 6: Mock Interviews & System Design
+
+Prepare you on:
+
+* **Walk-through** of the protocol: on-chain flows, account design, PDAs
+* **Trade-offs**: on‑chain vs off‑chain storage; batching vs real-time
+* **Scale challenges**: 10M users, flash-loan attacks, redundant oracle access
+* **Performance regression** detection pipeline
+
+---
+
+## 🧾 Deliverables & Portfolio
+
+By the end you'll have:
+
+* A **detailed report** documenting high-impact optimizations with before/after metrics
+* A **refined project** (open-sourced) with readme, cleanup, test coverage, deployment scripts
+* A **blog/article** on performance lessons in Solana lending
+* A **dashboard demo** showing live metrics
+
+---
+
+### ✅ Next Steps
+
+Please share:
+
+* A quick summary of your repo structure (e.g., programs, scripts, tests, front-end)
+* Major pain points you’ve noticed (e.g. slow tests, high compute cost)
+* Specific optimization areas you're curious to explore
+
+Once I have that, I’ll draft a detailed curriculum week's plan tailored to this project.
+
+- use smallest data type
+- avoid cloing,
+- save bump of pda
+- general optimization: 
+
+- bit operations: learn this
+
+- using right data type in struct, for eg. using string for authority(wallet address)
+- string encoding is expensive.
+- use 32 bytes vs 32 bytes. 

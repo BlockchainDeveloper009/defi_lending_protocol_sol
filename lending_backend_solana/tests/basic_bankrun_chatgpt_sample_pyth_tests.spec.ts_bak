@@ -1,0 +1,147 @@
+import { describe, it } from "mocha";
+import { expect } from "chai";
+import {
+  Keypair,
+  PublicKey,
+  SystemProgram,
+  Transaction,
+  Connection,
+  sendAndConfirmTransaction,
+} from "@solana/web3.js";
+import { BankrunProvider, startAnchor, BanksClient } from "anchor-bankrun";
+import { createMint, createAccount, mintTo } from "spl-token-bankrun";
+import { Program } from "@coral-xyz/anchor";
+import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
+
+import IDL from "../target/idl/lending_backend_solana.json";
+import { LendingBackendSolana } from "../target/types/lending_backend_solana";
+
+const PYTH_PROGRAM_ID = new PublicKey("11111111111111111111111111111111");
+
+describe("Bankrun + Mock Pyth + Token test", async () => {
+  let program: Program<LendingBackendSolana>;
+  let provider: BankrunProvider;
+  let banksClient: BanksClient;
+  let signer: Keypair;
+  let connection: Connection;
+  let pythPriceAccount: PublicKey;
+
+  const PRICE = 250_00000000n; // $250.00 with expo -8
+  const EXPO = -8;
+
+  it("Setup environment", async () => {
+    const context = await startAnchor(
+      "",
+      [{ name: "lending_backend_solana", programId: new PublicKey(IDL.address) }],
+      []
+    );
+
+    provider = new BankrunProvider(context);
+    banksClient = context.banksClient;
+    signer = provider.wallet.payer;
+    connection = provider.connection.toConnection();
+
+    // Create mocked Pyth account with valid data
+    pythPriceAccount = await createMockPythPriceAccountWithData(connection, signer, PRICE, EXPO);
+    context.setAccount(pythPriceAccount, await connection.getAccountInfo(pythPriceAccount));
+
+    // Confirm it exists
+    const info = await connection.getAccountInfo(pythPriceAccount);
+    expect(info).to.not.be.null;
+    console.log("✅ Mock Pyth account created:", pythPriceAccount.toBase58());
+
+    program = new Program(IDL as LendingBackendSolana, provider);
+  });
+
+  it("Creates and funds a mint + user token account", async () => {
+    const mint = await createMint(banksClient, signer, signer.publicKey, null, 6);
+    const userTokenAccount = await createAccount(banksClient, signer, mint, signer.publicKey);
+    const amount = 1_000_000_000;
+
+    await mintTo(banksClient, signer, mint, userTokenAccount, signer, amount);
+
+    const acc = await banksClient.getAccount(userTokenAccount);
+    expect(acc?.data.length).to.be.greaterThan(0);
+    console.log("✅ Token account funded with:", amount / 1e6, "tokens");
+  });
+
+  it("Calls dummy borrow instruction using mocked Pyth", async () => {
+    try {
+      const tx = await program.methods
+        .borrow(new BN(1))
+        .accounts({
+          signer: signer.publicKey,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          priceUpdate: pythPriceAccount,
+        })
+        .rpc({ commitment: "confirmed" });
+
+      console.log("✅ Borrow transaction:", tx);
+      await printTxLogs(connection, tx);
+    } catch (err: any) {
+      console.error("❌ TX Failed:", err);
+      if (err.logs) console.log("Logs:", err.logs);
+      throw err;
+    }
+  });
+});
+
+// -------------------------------------------
+// Helpers
+// -------------------------------------------
+import { BN } from "@coral-xyz/anchor";
+import { struct } from "buffer-layout";
+
+async function createMockPythPriceAccountWithData(
+  connection: Connection,
+  payer: Keypair,
+  price: bigint,
+  expo: number,
+  size = 3312
+): Promise<PublicKey> {
+  const mockPyth = Keypair.generate();
+  const lamports = await connection.getMinimumBalanceForRentExemption(size);
+
+  const createTx = new Transaction().add(
+    SystemProgram.createAccount({
+      fromPubkey: payer.publicKey,
+      newAccountPubkey: mockPyth.publicKey,
+      lamports,
+      space: size,
+      programId: PYTH_PROGRAM_ID,
+    })
+  );
+
+  await sendAndConfirmTransaction(connection, createTx, [payer, mockPyth]);
+
+  // Build buffer with basic fields
+  const buf = Buffer.alloc(size);
+  buf.writeUInt32LE(0xa1b2c3d4, 0); // magic
+  buf.writeUInt32LE(2, 4); // version
+  buf.writeUInt32LE(3, 8); // type: Price
+  buf.writeInt32LE(expo, 20); // expo
+  buf.writeBigInt64LE(price, 208); // agg.price
+  buf.writeBigUInt64LE(1_000_000n, 224); // conf
+  buf.writeUInt32LE(1, 232); // status = Trading
+
+  // Write to account
+  const writeTx = new Transaction().add({
+    keys: [{ pubkey: mockPyth.publicKey, isSigner: false, isWritable: true }],
+    programId: PYTH_PROGRAM_ID,
+    data: buf,
+  });
+
+  await sendAndConfirmTransaction(connection, writeTx, [payer]);
+  return mockPyth.publicKey;
+}
+
+async function printTxLogs(connection: Connection, txSig: string) {
+  const tx = await connection.getParsedTransaction(txSig, { commitment: "confirmed" });
+  if (tx?.meta?.logMessages) {
+    console.log(`\n--- Logs for ${txSig} ---`);
+    tx.meta.logMessages.forEach((log) => console.log(log));
+    console.log("-----------------------------\n");
+  } else {
+    console.log(`No logs found for ${txSig}`);
+  }
+}

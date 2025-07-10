@@ -1,0 +1,397 @@
+import { describe, it, before } from "node:test"; // Import 'before' for setup hooks
+import { BN, Program } from "@coral-xyz/anchor";
+import { BankrunProvider } from "anchor-bankrun";
+import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { createAccount, createMint, mintTo } from "spl-token-bankrun";
+import { PythSolanaReceiver } from "@pythnetwork/pyth-solana-receiver";
+
+import { startAnchor, BanksClient, ProgramTestContext } from "solana-bankrun";
+
+import { Connection, LAMPORTS_PER_SOL, Transaction } from "@solana/web3.js";
+
+
+import    from "../target/idl/lending_backend_solana.json";
+import { LendingBackendSolana } from "../target/types/lending_backend_solana";
+import { BankrunContextWrapper } from "../bankrun-utils/bankrunConnection";
+import { Keypair, SystemProgram, PublicKey, AccountInfo } from "@solana/web3.js";
+
+// Helper function to print transaction logs (useful for debugging)
+async function printTxLogs(connection: Connection, txSig: string) {
+  const tx = await connection.getParsedTransaction(txSig, { commitment: "confirmed" });
+  if (tx && tx.meta && tx.meta.logMessages) {
+    console.log(`\n--- Logs for ${txSig} ---`);
+    tx.meta.logMessages.forEach((log) => console.log(log));
+    console.log('-------------------------\n');
+  } else {
+    console.log(`No logs found for ${txSig}`);
+  }
+}
+
+/**
+ * Creates a mock Pyth price account on a live Solana cluster (localnet/devnet).
+ * This function is used to prepare account data that will then be loaded into the
+ * bankrun simulated environment using `context.setAccount`.
+ *
+ * @param connection The Connection object to a live Solana cluster (e.g., localnet or devnet).
+ * @param payer The Keypair to sign the transaction for creating the account. This payer must have SOL.
+ * @param programId The program ID that will own the new account. Defaults to SystemProgram.
+ * @param size The desired size of the account in bytes. Pyth price accounts are typically 3312 bytes.
+ * @returns The PublicKey of the newly created mock Pyth account.
+ */
+export async function createMockPythPriceAccount(
+  connection: Connection,
+  payer: Keypair,
+  programId = SystemProgram.programId, // Default to SystemProgram if not specified
+  size = 3312 // Pyth price account size
+): Promise<PublicKey> {
+  console.log("Creating mock Pyth account on localnet/devnet...");
+  const mockPyth = Keypair.generate();
+  // Calculate minimum lamports for rent exemption for the account size
+  const lamports = await connection.getMinimumBalanceForRentExemption(size);
+  
+  // Create and send the transaction to create the account on the live cluster
+  const tx = await connection.sendTransaction(
+    new Transaction().add(
+      SystemProgram.createAccount({
+        fromPubkey: payer.publicKey,
+        newAccountPubkey: mockPyth.publicKey,
+        lamports,
+        space: size,
+        programId,
+      })
+    ),
+    [payer, mockPyth] // Both payer and the new account keypair must sign
+  );
+  await connection.confirmTransaction(tx, "confirmed"); // Wait for the transaction to be confirmed
+  console.log("Mock Pyth Price Account Created:", mockPyth.publicKey.toBase58());
+  return mockPyth.publicKey;
+}
+
+describe("Lending Smart Contract Tests", () => {
+  let signer: Keypair;
+  let usdcBankAccount: PublicKey;
+  let solBankAccount: PublicKey;
+  let solTokenAccount: PublicKey;
+  let provider: BankrunProvider;
+  let program: Program<LendingBackendSolana>;
+  let banksClient: BanksClient;
+  let context: ProgramTestContext;
+  let bankrunContextWrapper: BankrunContextWrapper;
+  // Use 'localnet' for consistent mock Pyth setup unless you specifically want to fetch from devnet
+  const env_str = "localnet"; 
+  const localnet = "http://127.0.0.1:8899";
+  // This connection is used for interacting with a real localnet/devnet RPC,
+  // typically for fetching existing account data or creating initial mock accounts.
+  const devnetConnection = new Connection(localnet); 
+  
+  // Default Pyth devnet address. This will be overwritten if a mock is created.
+  let pyth = new PublicKey("7UVimffxr9ow1uXYxsr4LHAcV58mLzhmwaeKvJ1pjLiE"); 
+  let priceUpdateAccount: PublicKey;
+
+  // Use a before hook to set up the bankrun environment before any tests run
+  before(async () => {
+    console.log("--------------------------->>:1 (Setup)");
+
+    let accountInfo: AccountInfo<Buffer> | null = null;
+    let pythAccountToLoad: PublicKey = pyth; // This will be the PublicKey loaded into bankrun
+
+    // Conditional logic to fetch real Pyth account data or create a mock
+    if (env_str.includes("devnet")) {
+      console.log("--------------------------->>:2 (Fetching real Pyth from Devnet)");
+      // Fetch real Pyth account info from devnet
+      accountInfo = await devnetConnection.getAccountInfo(pyth);
+      if (!accountInfo) {
+        console.error("Failed to fetch real Pyth account info from devnet. Tests might fail.");
+      }
+    } else {
+      console.log("--------------------------->>:3 (Creating Mock Pyth for Localnet/Bankrun)");
+      // For localnet/bankrun, create a mock Pyth account on the running local validator
+      // and then load its info into the bankrun context.
+      // Note: createMockPythPriceAccount needs a funded payer.
+      // We'll use a temporary Keypair and fund it via devnetConnection if needed,
+      // or assume a local validator is running and has a faucet.
+      const tempPayerForMockCreation = Keypair.generate();
+      // In a real localnet setup, you might request an airdrop here for tempPayerForMockCreation
+      // await devnetConnection.requestAirdrop(tempPayerForMockCreation.publicKey, 10 * LAMPORTS_PER_SOL);
+      // await new Promise(resolve => setTimeout(resolve, 500)); // Small delay for airdrop to settle
+      // const tempPayerBalance = await devnetConnection.getBalance(tempPayerForMockCreation.publicKey);
+      // console.log(`Temp payer balance for mock creation: ${tempPayerBalance / LAMPORTS_PER_SOL} SOL`);
+
+      const mockPythPublicKey = await createMockPythPriceAccount(devnetConnection, tempPayerForMockCreation);
+      accountInfo = await devnetConnection.getAccountInfo(mockPythPublicKey);
+      pythAccountToLoad = mockPythPublicKey; // Set the public key to the mock account's key
+      if (!accountInfo) {
+        console.error("Failed to create mock Pyth price account or fetch its info. Account info is null.");
+      }
+      console.log("Using mock Pyth price account for localnet/bankrun tests:", pythAccountToLoad.toBase58());
+    }
+
+    // Initialize Bankrun context with your program and the Pyth account data
+    context = await startAnchor(
+      "", // Path to your Anchor workspace root (e.g., "../") if needed, otherwise empty string
+      [{ name: "lending_backend_solana", programId: new PublicKey(IDL.address) }],
+      accountInfo
+        ? [
+            {
+              address: pythAccountToLoad, // Load the Pyth account (real or mock) into bankrun
+              info: accountInfo,
+            },
+          ]
+        : []
+    );
+
+    provider = new BankrunProvider(context);
+    bankrunContextWrapper = new BankrunContextWrapper(context);
+    // The `connection` here is a mock connection provided by BankrunProvider for internal bankrun operations
+    // It does NOT connect to a real RPC.
+    // const connection = bankrunContextWrapper.connection.toConnection(); // This line is not used globally, but can be used inside tests
+
+    // Initialize Anchor program and BanksClient
+    program = new Program<LendingBackendSolana>(IDL as LendingBackendSolana, provider);
+    banksClient = context.banksClient;
+    signer = provider.wallet.payer; // This 'signer' Keypair is automatically funded by bankrun!
+
+    // --- IMPORTANT: Airdrop/Funding Explanation ---
+    // The 'signer' Keypair (provider.wallet.payer) is automatically funded with a large amount of SOL
+    // by bankrun when `startAnchor` is called. You do NOT need to explicitly "airdrop" to it.
+    // Its initial balance is already set by the bankrun environment.
+    // You can verify its balance:
+    const initialSignerBalance = await banksClient.getAccount(signer.publicKey);
+    console.log(`Initial signer balance (funded by bankrun): ${initialSignerBalance?.lamports / LAMPORTS_PER_SOL} SOL`);
+
+    // --- Example: How to fund *another* new arbitrary account within a bankrun test ---
+    // If you need to give SOL to a *different* Keypair for a specific test scenario,
+    // you can transfer SOL from your already-funded 'signer' account.
+    const anotherAccount = Keypair.generate();
+    const fundAmount = 5 * LAMPORTS_PER_SOL; // 5 SOL (in lamports)
+
+    console.log(`Attempting to fund new account ${anotherAccount.publicKey.toBase58()} with ${fundAmount / LAMPORTS_PER_SOL} SOL...`);
+
+    const transferToNewAccountIx = SystemProgram.transfer({
+      fromPubkey: signer.publicKey, // Use the already funded 'signer' as the source
+      toPubkey: anotherAccount.publicKey,
+      lamports: fundAmount,
+    });
+
+    const fundNewAccountTx = new Transaction().add(transferToNewAccountIx);
+    fundNewAccountTx.recentBlockhash = context.lastBlockhash; // Use the latest blockhash from the context
+    fundNewAccountTx.sign(signer); // The 'signer' must sign this transaction
+
+    try {
+      await banksClient.processTransaction(fundNewAccountTx); // Process the transaction in the bankrun environment
+      const newAccountBalance = await banksClient.getAccount(anotherAccount.publicKey);
+      console.log(`New account ${anotherAccount.publicKey.toBase58()} funded. Balance: ${newAccountBalance?.lamports / LAMPORTS_PER_SOL} SOL`);
+    } catch (error) {
+      console.error("Failed to fund another account:", error);
+      // Depending on your testing philosophy, you might re-throw the error here
+      // or simply log it if the test can proceed without this specific funding.
+    }
+    // --- End Airdrop/Funding Example ---
+
+    // Set priceUpdateAccount to the Pyth account that was loaded into bankrun
+    priceUpdateAccount = pythAccountToLoad;
+
+    // Initialize SPL Mints for USDC and SOL tokens within bankrun
+    const mintUSDC = await createMint(
+      // @ts-ignore
+      banksClient,
+      signer, // 'signer' is the payer for mint creation
+      signer.publicKey, // Mint authority
+      null, // Freeze authority (null for no freeze authority)
+      6 // Decimals for USDC (commonly 6)
+    );
+
+    const mintSOL = await createMint(
+      // @ts-ignore
+      banksClient,
+      signer,
+      signer.publicKey,
+      null,
+      9 // Decimals for SOL (commonly 9)
+    );
+
+    // Find Program Derived Addresses (PDAs) for treasury accounts
+    [usdcBankAccount] = PublicKey.findProgramAddressSync(
+      [Buffer.from("treasury"), mintUSDC.toBuffer()],
+      program.programId
+    );
+
+    [solBankAccount] = PublicKey.findProgramAddressSync(
+      [Buffer.from("treasury"), mintSOL.toBuffer()],
+      program.programId
+    );
+
+    // This seems like a duplicate or intended for a different purpose than solBankAccount
+    // If it's meant to be a user's token account for SOL, it should be different.
+    // For now, keeping it as is based on your original code.
+    [solTokenAccount] = PublicKey.findProgramAddressSync(
+      [Buffer.from("treasury"), mintSOL.toBuffer()],
+      program.programId
+    );
+
+    console.log("USDC Bank Account (PDA):", usdcBankAccount.toBase58());
+    console.log("SOL Bank Account (PDA):", solBankAccount.toBase58());
+  });
+
+  // --- Your existing test cases follow ---
+
+  it("Test Init User", async () => {
+    const initUserTx = await program.methods
+      .initUser(mintUSDC)
+      .accounts({
+        signer: signer.publicKey,
+      })
+      .rpc({ commitment: "confirmed" });
+
+    console.log("Create User Account Signature:", initUserTx);
+    // Use bankrunContextWrapper.connection.toConnection() for printTxLogs
+    await printTxLogs(bankrunContextWrapper.connection.toConnection(), initUserTx); 
+  });
+
+  it("Test Init and Fund USDC Bank", async () => {
+    const initUSDCBankTx = await program.methods
+      .initBank(new BN(1), new BN(1)) // Example values for interest rates
+      .accounts({
+        signer: signer.publicKey,
+        mint: mintUSDC,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .rpc({ commitment: "confirmed" });
+
+    console.log("Create USDC Bank Account Signature:", initUSDCBankTx);
+    // Use bankrunContextWrapper.connection.toConnection() for printTxLogs
+    await printTxLogs(bankrunContextWrapper.connection.toConnection(), initUSDCBankTx);
+
+    const amount = new BN(10_000).mul(new BN(10).pow(new BN(6))); // 10,000 USDC (assuming 6 decimals)
+    const mintTx = await mintTo(
+      // @ts-ignore // Ignore type checking for spl-token-bankrun utility
+      banksClient,
+      signer, // Payer for the mintTo transaction
+      mintUSDC, // Mint address
+      usdcBankAccount, // Destination token account (the bank's treasury)
+      signer, // Mint authority (signer is also the mint authority)
+      amount.toNumber() // Amount to mint (spl-token-bankrun expects number)
+    );
+
+    console.log("Mint to USDC Bank Signature:", mintTx);
+  });
+
+  it("Test Init and Fund SOL Bank", async () => {
+    const initSOLBankTx = await program.methods
+      .initBank(new BN(1), new BN(1)) // Example values for interest rates
+      .accounts({
+        signer: signer.publicKey,
+        mint: mintSOL,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .rpc({ commitment: "confirmed" });
+
+    console.log("Create SOL Bank Account Signature:", initSOLBankTx);
+    // Use bankrunContextWrapper.connection.toConnection() for printTxLogs
+    await printTxLogs(bankrunContextWrapper.connection.toConnection(), initSOLBankTx);
+
+    const amount = new BN(10_000).mul(new BN(10).pow(new BN(9))); // 10,000 SOL (assuming 9 decimals)
+    const mintSOLTx = await mintTo(
+      // @ts-ignore
+      banksClient,
+      signer,
+      mintSOL,
+      solBankAccount,
+      signer,
+      amount.toNumber()
+    );
+
+    console.log("Mint to SOL Bank Signature:", mintSOLTx);
+  });
+
+  it("Create and Fund User Token Account", async () => {
+    // Create a user's USDC token account
+    const USDCTokenAccount = await createAccount(
+      // @ts-ignore
+      banksClient,
+      signer, // Payer for creating the account
+      mintUSDC, // Mint for this token account
+      signer.publicKey // Owner of the new token account
+    );
+
+    console.log("User USDC Token Account Created:", USDCTokenAccount.toBase58());
+
+    const amount = new BN(10_000).mul(new BN(10).pow(new BN(6))); // 10,000 USDC
+    const mintUSDCToUserTx = await mintTo(
+      // @ts-ignore
+      banksClient,
+      signer, // Payer for minting
+      mintUSDC, // Mint address
+      USDCTokenAccount, // Destination: user's token account
+      signer, // Mint authority
+      amount.toNumber()
+    );
+
+    console.log("Mint to User USDC Token Account Signature:", mintUSDCToUserTx);
+  });
+
+  it("Test Deposit", async () => {
+    // Ensure the amount matches the decimals of mintUSDC (6 decimals for USDC)
+    const depositAmount = new BN(100).mul(new BN(10).pow(new BN(6))); // 100 USDC
+    const depositUSDC = await program.methods
+      .deposit(depositAmount)
+      .accounts({
+        signer: signer.publicKey,
+        mint: mintUSDC,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .rpc({ commitment: "confirmed" });
+
+    console.log("BANKRUN_TESTS::: Deposit USDC Signature:", depositUSDC);
+    await printTxLogs(bankrunContextWrapper.connection.toConnection(), depositUSDC);
+  });
+
+  it("Test Borrow", async () => {
+    // Ensure the amount matches the decimals of mintSOL (9 decimals for SOL)
+    const borrowAmount = new BN(1).mul(new BN(10).pow(new BN(9))); // 1 SOL
+    const borrowSOL = await program.methods
+      .borrow(borrowAmount)
+      .accounts({
+        signer: signer.publicKey,
+        mint: mintSOL,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        priceUpdate: priceUpdateAccount, // Use the dynamically set priceUpdateAccount
+      })
+      .rpc({ commitment: "confirmed" });
+
+    console.log("Borrow SOL Signature:", borrowSOL);
+    await printTxLogs(bankrunContextWrapper.connection.toConnection(), borrowSOL);
+  });
+
+  it("Test Repay", async () => {
+    // Ensure the amount matches the decimals of mintSOL (9 decimals for SOL)
+    const repayAmount = new BN(1).mul(new BN(10).pow(new BN(9))); // 1 SOL
+    const repaySOL = await program.methods
+      .repay(repayAmount)
+      .accounts({
+        signer: signer.publicKey,
+        mint: mintSOL,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .rpc({ commitment: "confirmed" });
+
+    console.log("Repay SOL Signature:", repaySOL);
+    await printTxLogs(bankrunContextWrapper.connection.toConnection(), repaySOL);
+  });
+
+  it("Test Withdraw", async () => {
+    // Ensure the amount matches the decimals of mintUSDC (6 decimals for USDC)
+    const withdrawAmount = new BN(100).mul(new BN(10).pow(new BN(6))); // 100 USDC
+    const withdrawUSDC = await program.methods
+      .withdraw(withdrawAmount)
+      .accounts({
+        signer: signer.publicKey,
+        mint: mintUSDC,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .rpc({ commitment: "confirmed" });
+
+    console.log("Withdraw USDC Signature:", withdrawUSDC);
+    await printTxLogs(bankrunContextWrapper.connection.toConnection(), withdrawUSDC);
+  });
+});

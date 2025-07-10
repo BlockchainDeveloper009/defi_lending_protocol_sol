@@ -3,8 +3,62 @@ use anchor_spl::associated_token::AssociatedToken;
 use anchor_spl::token_interface::{ self, Mint, TokenAccount, TokenInterface, TransferChecked };
 use crate::state::*;
 
+use anchor_lang::solana_program::log::sol_log_compute_units;
+
+
 // use solana_program::log::sol_log_compute_units;
 // use solana_program::clock::Clock;
+//use anchor_spl::solana_program::msg;
+
+
+// 💡 Highlight #1: Define a macro for conditional logging.
+// This macro will only expand to its content when the "debug" feature is active.
+#[cfg(feature = "debug")]
+macro_rules! debug_log {
+    ($($arg:tt)*) => {
+        solana_program::log::sol_log_compute_units();
+    };
+}
+
+// If the "debug" feature is NOT active, this macro expands to nothing.
+#[cfg(not(feature = "debug"))]
+macro_rules! debug_log {
+    ($($arg:tt)*) => {};
+}
+
+
+#[macro_export]
+#[cfg(not(feature = "trace-compute"))]
+macro_rules! compute {
+  (
+    $msg:expr => $($tt:tt)*
+  ) => { $($tt)* };
+}
+
+/// Total extra compute units used per compute_fn! call 409 CU
+/// https://github.com/anza-xyz/agave/blob/d88050cda335f87e872eddbdf8506bc063f039d3/programs/bpf_loader/src/syscalls/logging.rs#L70
+/// https://github.com/anza-xyz/agave/blob/d88050cda335f87e872eddbdf8506bc063f039d3/program-runtime/src/compute_budget.rs#L150
+#[macro_export]
+macro_rules! compute_fn {
+  (
+    $msg:expr => $($tt:tt)*
+  ) => {
+
+    msg!("-----testing compute_fn______________");
+
+      //  anchor_lang::solana_program::msg!(concat!($msg, " {"));
+        anchor_lang::solana_program::log::sol_log_compute_units();
+        let res = { $($tt)* };
+        sol_log_compute_units();
+        msg!(concat!(" } // ", $msg));
+        res
+  };
+}
+
+
+
+
+
 
 #[derive(Accounts)]
 pub struct Deposit<'info> {
@@ -46,16 +100,35 @@ pub struct Deposit<'info> {
 // 3. Update user's deposited amount and total collateral value
 // 4. Update bank's total deposits and total deposit shares
 // 5. Update users health factor ?? 
-
+//  https://github.com/solana-developers/cu_optimizations/blob/main/counterAnchor/anchor/programs/counter/src/lib.rs
+// 6. Log compute units at various stages for optimization
 pub fn process_deposit(ctx: Context<Deposit>, amount: u64) -> Result<()> {
      //  sol_log_compute_units(); // Log at function entry
+    // 109 CU
+    // let transfer_cpi_accounts   ; 
+    // compute_fn! { "TransferChecked" =>
+    //         transfer_cpi_accounts = TransferChecked {
+    //     from: ctx.accounts.user_token_account.to_account_info(),
+    //     mint: ctx.accounts.mint.to_account_info(),
+    //     to: ctx.accounts.bank_token_account.to_account_info(),
+    //     authority: ctx.accounts.signer.to_account_info(),
+    // };
+    //     }
 
-    let transfer_cpi_accounts = TransferChecked {
+     let transfer_cpi_accounts  = TransferChecked {
         from: ctx.accounts.user_token_account.to_account_info(),
         mint: ctx.accounts.mint.to_account_info(),
         to: ctx.accounts.bank_token_account.to_account_info(),
         authority: ctx.accounts.signer.to_account_info(),
     };
+    
+/* 
+            compute_fn! { "TransferChecked" =>
+         //instruction
+        }
+
+*/
+    
     // sol_log_compute_units(); // After building CPI accounts
 
     let cpi_program = ctx.accounts.token_program.to_account_info();
@@ -65,6 +138,11 @@ pub fn process_deposit(ctx: Context<Deposit>, amount: u64) -> Result<()> {
     // sol_log_compute_units(); // Before CPI
 
     token_interface::transfer_checked(cpi_ctx, amount, decimals)?;
+
+    // compute_fn! { "TransferChecked" =>
+    //      //instruction
+    //      token_interface::transfer_checked(cpi_ctx, amount, decimals)?;
+    //     }
 
     // sol_log_compute_units(); // After CPI
 
@@ -125,3 +203,4 @@ pub fn process_deposit(ctx: Context<Deposit>, amount: u64) -> Result<()> {
 
     Ok(())
 }
+

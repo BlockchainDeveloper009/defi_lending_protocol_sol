@@ -1,0 +1,48 @@
+Goal
+Build a real-time dashboard for your Microblog dApp showing:
+
+Daily active users
+
+Top posts
+
+Transaction latency
+
+CPU usage (via logs)
+
+Stack
+Use Solana Webhooks, getProgramAccounts, or Solana RPC subscriptions
+
+Use Redis + Supabase + Grafana (or ClickHouse for large-scale metrics)
+
+Performance Insight
+Compare polling vs WebSocket for updates
+
+Measure load on RPC and your dApp
+
+Use Transaction.meta.logMessages to profile CPU-bound code paths
+
+
+
+## 📊 Week 5–6: Indexing + Real-Time Data — Analytics Dashboard
+
+### Goal
+
+Build a real-time dashboard for your Microblog dApp showing:
+
+* Daily active users
+* Top posts
+* Transaction latency
+* CPU usage (via logs)
+
+### Stack
+
+* Use **Solana Webhooks**, `getProgramAccounts`, or **Solana RPC** subscriptions
+* Use **Redis + Supabase + Grafana** (or ClickHouse for large-scale metrics)
+
+### Performance Insight
+
+* Compare polling vs WebSocket for updates
+* Measure load on RPC and your dApp
+* Use `Transaction.meta.logMessages` to profile CPU-bound code paths
+
+---
