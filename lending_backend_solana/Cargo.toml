@@ -1,6 +1,8 @@
 [workspace]
 members = [
     "programs/lending_backend_solana",
+    "programs/mock_pyth_oracle",
+    
 ]
 resolver = "2"
 

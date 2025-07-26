@@ -84,3 +84,7 @@ harishgk@harishgk-HP-EliteBook-Folio-9480m:~/source/repos/defi_lending_protocol_
 $ docker run -it --rm -p 8899:8899 -p 3000:3000 --name lending-backend-solana lending-backend-solana
 
 $docker exec -it lending-backend-solana /bin/bash
+
+
+
+[how to run tests](<ReadME_How to Run Test.md>)

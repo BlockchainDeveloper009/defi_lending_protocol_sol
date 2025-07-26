@@ -1,12 +1,12 @@
 [package]
-name = "lending_backend_solana"
+name = "mock_pyth_oracle"
 version = "0.1.0"
-description = "Created with Anchor"
+description = "mock_pyth_oracle"
 edition = "2021"
 
 [lib]
 crate-type = ["cdylib", "lib"]
-name = "lending_backend_solana"
+name = "mock_pyth_oracle"
 
 [features]
 default = []
@@ -24,4 +24,4 @@ anchor-spl = "0.31.1"
 # anchor-spl = { version = "0.31.0", features = ["no-entrypoint"] }
 pyth-sdk-solana = "0.10.1"
 pyth-solana-receiver-sdk = "0.3.1"
-mock_pyth_oracle = { path = "../mock_pyth_oracle" }
+

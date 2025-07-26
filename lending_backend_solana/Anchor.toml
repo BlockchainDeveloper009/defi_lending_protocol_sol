@@ -7,7 +7,9 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
+mock_pyth_oracle = "CHoptLtk8eyutQoj5PKaqcA73ALiAqPoAZV5HbFNqSU1"
 lending_backend_solana = "CHoptLtk8eyutQoj5PKaqcA73ALiAqPoAZV5HbFNqSUw"
+
 
 [registry]
 url = "https://api.apr.dev"
