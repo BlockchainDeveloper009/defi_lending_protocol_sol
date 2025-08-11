@@ -10,3 +10,5 @@ pub use repay::*;
 pub mod repay;
 pub use liquidate::*;
 pub mod liquidate;
+pub use fees::*;
+pub mod fees;

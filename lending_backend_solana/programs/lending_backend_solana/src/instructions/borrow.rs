@@ -7,6 +7,8 @@ use pyth_solana_receiver_sdk::price_update::{get_feed_id_from_hex, PriceUpdateV2
 use crate::constants::{MAXIMUM_AGE, SOL_USD_FEED_ID, USDC_USD_FEED_ID};
 use crate::state::*;
 use crate::error::ErrorCode;
+use crate::instructions::fees::apply_fees_and_transfer;
+
 
 #[derive(Accounts)]
 pub struct Borrow<'info> {
@@ -43,6 +45,14 @@ pub struct Borrow<'info> {
     pub token_program: Interface<'info, TokenInterface>,
     pub associated_token_program: Program<'info, AssociatedToken>,
     pub system_program: Program<'info, System>,
+
+    #[account(mut)]
+    pub fee_config: Account<'info, FeeConfig>,
+
+    /// Token account to collect the fee into (must be same mint)
+    #[account(mut)]
+    pub fee_receiver_token_account: InterfaceAccount<'info, TokenAccount>,
+
 }
 
 // 1. Check if user has enough collateral to borrow
@@ -52,10 +62,12 @@ pub struct Borrow<'info> {
 // 5. Update the bank's total borrows and total borrow shares
 
 pub fn process_borrow(ctx: Context<Borrow>, amount: u64) -> Result<()> {
+
+
     // Check if user has enough collateral to borrow
     let bank = &mut ctx.accounts.bank;
-    let user = &mut ctx.accounts.user_account;
-
+    
+let user = &mut ctx.accounts.user_account;
     let price_update = &mut ctx.accounts.price_update;
 
     let total_collateral: u64;
@@ -79,8 +91,31 @@ pub fn process_borrow(ctx: Context<Borrow>, amount: u64) -> Result<()> {
 
     if borrowable_amount < amount {
         return Err(ErrorCode::OverBorrowableAmount.into());
-    }       
+    }    
+    let mint_key = ctx.accounts.mint.key();
+    let signer_seeds: &[&[&[u8]]] = &[
+        &[
+            b"treasury",
+            mint_key.as_ref(),
+            &[ctx.bumps.bank_token_account],
+        ],
+    ];   
+//incldue fees
+// Step 1: Apply fees and get net borrowable amount
+let net_amount = apply_fees_and_transfer(
+    user,
+    &ctx.accounts.fee_config,
+    amount,
+    &ctx.accounts.mint,
+    &ctx.accounts.token_program,
+    &ctx.accounts.bank_token_account,
+    &ctx.accounts.fee_receiver_token_account,
+    signer_seeds,
+)?;
 
+
+
+// Step 2: Transfer remaining amount to user
     let transfer_cpi_accounts = TransferChecked {
         from: ctx.accounts.bank_token_account.to_account_info(),
         mint: ctx.accounts.mint.to_account_info(),
@@ -89,37 +124,43 @@ pub fn process_borrow(ctx: Context<Borrow>, amount: u64) -> Result<()> {
     };
 
     let cpi_program = ctx.accounts.token_program.to_account_info();
-    let mint_key = ctx.accounts.mint.key();
-    let signer_seeds: &[&[&[u8]]] = &[
-        &[
-            b"treasury",
-            mint_key.as_ref(),
-            &[ctx.bumps.bank_token_account],
-        ],
-    ];
+    
+
     let cpi_ctx = CpiContext::new(cpi_program, transfer_cpi_accounts).with_signer(signer_seeds);
     let decimals = ctx.accounts.mint.decimals;
 
-    token_interface::transfer_checked(cpi_ctx, amount, decimals)?;
+    token_interface::transfer_checked(cpi_ctx, net_amount, decimals)?;
 
     if bank.total_borrowed == 0 {
-        bank.total_borrowed = amount;
-        bank.total_borrowed_shares = amount;
+        bank.total_borrowed = net_amount;
+        bank.total_borrowed_shares = net_amount;
     } 
 
-    let borrow_ratio = amount.checked_div(bank.total_borrowed).unwrap();
-    let users_shares = bank.total_borrowed_shares.checked_mul(borrow_ratio).unwrap();
+    let borrow_ratio = net_amount.checked_div(bank.total_borrowed).unwrap();
 
-    bank.total_borrowed += amount;
+    //let users_shares = bank.total_borrowed_shares.checked_mul(borrow_ratio).unwrap();
+
+     
+    let users_shares = if bank.total_borrowed_shares == 0 || bank.total_borrowed == 0 {
+         net_amount
+    } else {
+         net_amount
+            .checked_mul(bank.total_borrowed_shares)
+            .unwrap()
+            .checked_div(bank.total_borrowed)
+            .unwrap()
+    };
+
+    bank.total_borrowed += net_amount;
     bank.total_borrowed_shares += users_shares; 
 
     match ctx.accounts.mint.to_account_info().key() {
         key if key == user.usdc_address => {
-            user.borrowed_usdc += amount;
+            user.borrowed_usdc += net_amount;
             user.deposited_usdc_shares += users_shares;
         },
         _ => {
-            user.borrowed_sol += amount;
+            user.borrowed_sol += net_amount;
             user.deposited_sol_shares += users_shares;
         }
     }
@@ -127,9 +168,19 @@ pub fn process_borrow(ctx: Context<Borrow>, amount: u64) -> Result<()> {
     Ok(())
 }
 
-fn calculate_accrued_interest(deposited: u64, interest_rate: u64, last_update: i64) -> Result<u64> {
+fn calculate_accrued_interest(deposited: u64, interest_rate_bps: u64, last_update: i64) -> Result<u64> {
     let current_time = Clock::get()?.unix_timestamp;
     let time_elapsed = current_time - last_update;
-    let new_value = (deposited as f64 * E.powf(interest_rate as f32 * time_elapsed as f32) as f64) as u64;
-    Ok(new_value)
+    if time_elapsed <= 0 {
+        return Ok(0);
+    }
+
+    // let new_value = (deposited as f64 * E.powf(interest_rate as f32 * time_elapsed as f32) as f64) as u64;
+    // Ok(new_value)
+
+        let rate_per_second = (interest_rate_bps as f64) / 10_000.0;
+    let growth = (rate_per_second * (time_elapsed as f64)).exp();
+    let accrued = (deposited as f64 * growth) as u64;
+
+    Ok(accrued.saturating_sub(deposited))
 }

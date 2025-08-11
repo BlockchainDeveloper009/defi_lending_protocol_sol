@@ -1,0 +1,100 @@
+import * as anchor from "@coral-xyz/anchor";
+import { Program } from "@coral-xyz/anchor";
+import { LendingBackendSolana } from "../target/types/lending_backend_solana";
+import { assert } from "chai";
+import { Keypair, PublicKey, SystemProgram } from "@solana/web3.js";
+// import { createMint, getOrCreateAssociatedTokenAccount,
+//    mintTo } from "@solana/spl-token";
+
+import  { createMint } from "spl-token-bankrun";
+import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { startAnchor, BanksClient, 
+  ProgramTestContext } from "solana-bankrun";
+import * as splTokenBankrun from "spl-token-bankrun";
+
+import { createAccount, getAccount, mintTo } from "spl-token-bankrun";
+//import IDL from "../target/idl/lending_backend_solana.json";
+import IDL from "../target/idl/lending_backend_solana.json";
+import { BankrunProvider } from "anchor-bankrun";
+import { BankrunContextWrapper } from "../bankrun-utils/bankrunConnection";
+
+//
+
+console.log(Object.keys(splTokenBankrun)); // Should include 'getAccount'
+
+describe("lending_backend_solana borrow", () => {
+  // Use Bankrun as the provider
+  
+  
+    let signer: Keypair;
+  let usdcBankAccount: PublicKey;
+  let solBankAccount: PublicKey;
+  let solTokenAccount: PublicKey;
+  let provider: BankrunProvider;
+  let program: Program<LendingBackendSolana>;
+  let banksClient: BanksClient;
+  let context: ProgramTestContext;
+  let bankrunContextWrapper: BankrunContextWrapper;
+  let env_str = "anchornet";
+  let priceUpdateAccount: PublicKey;
+  let feeConfig: Keypair;
+  let feeReceiverTokenAccount: PublicKey;
+
+  let mintUSDC: PublicKey;
+  let mintSOL: PublicKey;
+
+  before(async () => {
+    // Airdrop SOL to user
+  const context = await startAnchor(
+  "", // path to anchor.toml (can be empty string if not used)
+  [
+    { name: "lending_backend_solana", programId: new PublicKey(IDL.address) }
+  ], // your program(s) and their IDs
+ 
+[]  //preloadAccounts // optional, for preloading accounts like Pyth price feeds
+);
+  banksClient = context.banksClient;
+signer = Keypair.generate(); // <-- Add this line
+    // You may need to call your program's init instructions here to properly initialize on-chain state.
+    // For example:
+    // await program.methods.initBank(...).accounts({...}).rpc();
+    // await program.methods.initUser(...).accounts({...}).rpc();
+    // await program.methods.deposit(...).accounts({...}).rpc();
+  });
+
+  it("should allow borrowing within collateral limits and collect fees", async () => {
+    // Call borrow
+
+        console.log(`----------------`);
+console.log('-----------------------')
+console.log(Object.keys(splTokenBankrun)); // Should include 'getAccount'
+console.log('--------------------------------')
+
+
+      mintSOL = await createMint(
+    banksClient,
+    signer,
+    signer.publicKey,
+    null,
+    2
+  );
+
+
+   feeReceiverTokenAccount = await createAccount(
+      banksClient,
+      signer,
+      mintSOL,
+      signer.publicKey
+    );
+    
+    const feeAccBefore = await getAccount(banksClient, 
+        feeReceiverTokenAccount, 
+        "confirmed", TOKEN_PROGRAM_ID);
+
+      console.log('----------')
+      console.log(feeAccBefore);
+      console.log('---------')
+
+  });
+
+});

@@ -2,6 +2,10 @@ solana-test-validator --reset
 LS
 
 
+anchor build
+anchor test
+
+
 # 🚀 Solana vs Ethereum: Smart Contract Developer Cheat Sheet
 
 This cheat sheet highlights Solana’s unique architecture **vs Ethereum**, and how to **leverage it while writing smart contracts**. Tailored for practical usage in Solana programs.

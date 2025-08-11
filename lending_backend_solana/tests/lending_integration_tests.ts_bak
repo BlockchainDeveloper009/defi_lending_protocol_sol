@@ -1,0 +1,165 @@
+import { describe, it } from "node:test";
+import { BN, Program } from "@coral-xyz/anchor";
+import { BankrunProvider } from "anchor-bankrun";
+import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { createAccount, createMint, mintTo, getAccount } from "spl-token-bankrun";
+import { PythSolanaReceiver } from "@pythnetwork/pyth-solana-receiver";
+import { startAnchor, BanksClient, 
+  ProgramTestContext } from "solana-bankrun";
+import { Connection, LAMPORTS_PER_SOL, 
+  Transaction, Keypair, SystemProgram, PublicKey } from "@solana/web3.js";
+import { expect } from "chai";
+//import IDL  from "../target/idl/lending_backend_solana.json";
+import IDL from "../target/idl/lending_backend_solana.json";
+import { LendingBackendSolana } from "../target/types/lending_backend_solana";
+import { BankrunContextWrapper } from "../bankrun-utils/bankrunConnection";
+import * as splTokenBankrun from "spl-token-bankrun";
+
+describe("Lending Smart Contract Tests", async () => {
+  let signer: Keypair;
+  let usdcBankAccount: PublicKey;
+  let solBankAccount: PublicKey;
+  let solTokenAccount: PublicKey;
+  let provider: BankrunProvider;
+  let program: Program<LendingBackendSolana>;
+  let banksClient: BanksClient;
+  let context: ProgramTestContext;
+  let bankrunContextWrapper: BankrunContextWrapper;
+  let env_str = "anchornet";
+  let priceUpdateAccount: PublicKey;
+  let feeConfig: Keypair;
+  let feeReceiverTokenAccount: PublicKey;
+
+  let mintUSDC: PublicKey;
+  let mintSOL: PublicKey;
+
+  // ... (pyth and price feed setup unchanged) ...
+
+  // --- Setup and Initialization ---
+  // (Keep your existing setup code here, unchanged...)
+
+  // After your mintUSDC and mintSOL are created, add:
+  before(async () => {
+    // ...existing setup...
+
+    // Create a mock FeeConfig account (as a Keypair, since it's an Account)
+    feeConfig = Keypair.generate();
+
+    // Create a token account to receive fees (for SOL mint here, change as needed)
+    feeReceiverTokenAccount = await createAccount(
+      banksClient,
+      signer,
+      mintSOL,
+      signer.publicKey
+    );
+    console.log(`----------------`);
+
+    console.log(Object.keys(splTokenBankrun)); // Should include 'getAccount'
+
+    console.log(`----------------`);
+  });
+
+  // ... (rest of your setup code unchanged) ...
+
+  it("Test Borrow", async () => {
+    // Optionally, check feeReceiverTokenAccount balance before
+    //const feeAccBefore = await getAccount(banksClient, feeReceiverTokenAccount);
+
+    const feeAccBefore = await getAccount(banksClient, 
+        feeReceiverTokenAccount, 
+        "confirmed", TOKEN_PROGRAM_ID);
+
+    const borrowSOL = await program.methods
+      .borrow(new BN(1))
+      .accounts({
+        signer: signer.publicKey,
+        mint: mintSOL,
+        bank: solBankAccount,
+        bankTokenAccount: solTokenAccount,
+        userAccount: signer.publicKey, // Replace with actual userAccount PDA if needed
+        userTokenAccount: solTokenAccount, // Replace with actual userTokenAccount if needed
+        feeConfig: feeConfig.publicKey,
+        feeReceiverTokenAccount,
+        priceUpdate: priceUpdateAccount,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+        // Add associatedTokenProgram if required by your program
+      })
+      .signers([signer, feeConfig]) // feeConfig is a Keypair, so must sign if writing
+      .rpc({ commitment: "confirmed" });
+
+    console.log("Borrow SOL", borrowSOL);
+    await printTxLogs(provider.connection, borrowSOL);
+
+    // Optionally, check feeReceiverTokenAccount balance after
+    const feeAccAfter = await getAccount(banksClient, feeReceiverTokenAccount);
+    expect(Number(feeAccAfter.amount)).to.be.greaterThan(Number(feeAccBefore.amount), "Fee receiver should get fee");
+  });
+
+  // ... (rest of your tests unchanged) ...
+});
+
+// --- Helper functions unchanged ---
+
+async function printTxLogs(connection: Connection, txSig: string) {
+  const tx = await connection.getParsedTransaction(txSig, { commitment: "confirmed" });
+  if (tx && tx.meta && tx.meta.logMessages) {
+    console.log(`\n--- Logs for ${txSig} ---`);
+    tx.meta.logMessages.forEach((log) => console.log(log));
+    console.log('-------------------------\n');
+  } else {
+    console.log(`No logs found for ${txSig}`);
+  }
+}
+
+export async function createMockPythPriceAccount(
+  banksClient: BanksClient,
+  payer: Keypair,
+  programId = new PublicKey("11111111111111111111111111111111"),
+  size = 3312 // Pyth price account size
+): Promise<PublicKey> {
+  const mockPyth = Keypair.generate();
+  const lamports = 2_000_000;
+  const ix = SystemProgram.createAccount({
+    fromPubkey: payer.publicKey,
+    newAccountPubkey: mockPyth.publicKey,
+    lamports,
+    space: size,
+    programId,
+  });
+  const tx = new Transaction().add(ix);
+  const [blockhash] = await banksClient.getLatestBlockhash();
+  tx.recentBlockhash = blockhash;
+  tx.feePayer = payer.publicKey;
+  tx.sign(payer, mockPyth);
+  await banksClient.processTransaction(tx);
+  return mockPyth.publicKey;
+}
+
+export async function createAndFundAccount(
+  context: ProgramTestContext,
+  toKeypair?: Keypair,
+  lamports: number = 5 * 1_000_000_000, // Default to 5 SOL,
+  recentBlockhash?: string
+): Promise<{ account: Keypair; balance: number }> {
+  const banksClient = context.banksClient;
+  const fromKeypair = context.payer;
+  const newAccount = toKeypair ?? Keypair.generate();
+  const transferIx = SystemProgram.transfer({
+    fromPubkey: fromKeypair.publicKey,
+    toPubkey: newAccount.publicKey,
+    lamports,
+  });
+  const tx = new Transaction().add(transferIx);
+  const [blockhash] = await banksClient.getLatestBlockhash();
+  tx.recentBlockhash = blockhash;
+  tx.sign(fromKeypair);
+  await banksClient.processTransaction(tx);
+  const newAccountInfo = await banksClient.getAccount(newAccount.publicKey);
+  const actualBalance = newAccountInfo?.lamports ?? 0;
+  expect(actualBalance).to.equal(lamports);
+  console.log(
+    `Funded account ${newAccount.publicKey.toBase58()} with ${actualBalance / 1_000_000_000} SOL`
+  );
+  return { account: newAccount, balance: actualBalance };
+}
